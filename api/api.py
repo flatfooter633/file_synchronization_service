@@ -1,6 +1,5 @@
 import aiohttp
 import asyncio
-import urllib.parse
 import os
 import hashlib
 from loguru import logger
@@ -116,28 +115,29 @@ class YandexDiskAPI:
             logger.debug(f"Проверяем локальный каталог: {cur_path}")
             cloud_files = await self.get_info(session, cur_path)
             logger.debug(f"облачные файлы: {cloud_files.keys()}")
-        except FileNotFoundError:
-            logger.warning(f"Директория {cur_path} не найдена")
-        else:
-            # Сравниваем локальные и облачные файлы и выставляем их в очередь на загрузку или удаление
-            for file in os.listdir(local_dir):
-                if not file.startswith(('.', '_')) and os.path.isfile(os.path.join(local_dir, file)):
-                    local_file_path = os.path.join(local_dir, file)
-                    remote_file_path = self.get_full_path(remote_path=remote_path, filename=file)
-                    local_hash = get_file_hash(local_file_path)
-                    cloud_hash = cloud_files.get(file)  # Используем имя файла как ключ
+            local_files = [f for f in os.listdir(local_dir) if
+                           not f.startswith(('.', '_')) and os.path.isfile(os.path.join(local_dir, f))]
+            logger.debug(f"локальные файлы: {local_files}")
 
-                    if local_hash != cloud_hash:
-                        logger.info(f"Файл {file} поставлен в очередь на загрузку. ")
-                        logger.info(f"  Локальный хеш: {local_hash}")
-                        logger.info(f"   Облачный хеш: {cloud_hash}")
-                        upload_tasks.append(asyncio.create_task(self.upload(session, local_file_path, remote_file_path)))
-                    else:
-                        logger.debug(f"Файл {file} уже синхронизирован")
+            # Сравниваем локальные и облачные файлы и выставляем их в очередь на загрузку или удаление
+            for file in local_files:
+                local_file_path = os.path.join(local_dir, file)
+                remote_file_path = self.get_full_path(remote_path=remote_path, filename=file)
+                local_hash = get_file_hash(local_file_path)
+                cloud_hash = cloud_files.get(file)
+
+                if local_hash != cloud_hash:
+                    logger.info(f"Файл {file} поставлен в очередь на загрузку. ")
+                    logger.info(f"  Локальный хеш: {local_hash}")
+                    logger.info(f"   Облачный хеш: {cloud_hash}")
+                    upload_tasks.append(asyncio.create_task(self.upload(session, local_file_path, remote_file_path)))
+                else:
+                    logger.debug(f"Файл {file} уже синхронизирован")
 
             # Удаляем лишние файлы из облака
             await self.cleanup(session, remote_path, cloud_files, os.listdir(local_dir))
-
+        except FileNotFoundError as e:
+            logger.error(f"Ошибка при обработке каталога {local_dir}: {e}")
     async def get_info(self, session, remote_dir_path: str):
         """Получает список файлов и их хеши в облаке"""
         params = {
@@ -148,10 +148,10 @@ class YandexDiskAPI:
         async with session.get(self.BASE_URL, headers=self.headers, params=params) as response:
             if response.status == 200:
                 data = await response.json()
-                logger.debug(f"HTTP response [{remote_dir_path}] -- {data}")
+                logger.debug(f"HTTP ответ [{remote_dir_path}] -- {data}")
                 return {str(item["name"]): item.get("md5") for item in data.get("_embedded", {}).get("items", [])
                         if item.get("type") == "file"}
-            logger.warning(f"HTTP response [{remote_dir_path}]: {await response.text()}")
+            logger.warning(f"HTTP ответ [{remote_dir_path}]: {await response.text()}")
             raise FileNotFoundError(f"Ресурс не найден: {remote_dir_path}")
 
     async def get_upload_url(self, session, remote_path):
