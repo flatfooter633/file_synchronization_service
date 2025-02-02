@@ -6,6 +6,8 @@ The file synchronization service is designed for automatic file synchronization 
 
 ## Installation
 
+To work, you will need a Yandex Disk access token. To get it, register or log in to your Yandex account, and then go to the [site](https://yandex.ru/dev/disk/poligon/) to generate a token. Here you can also try various methods of working with the Yandex Disk public API. Authorization is carried out using the AOuth 2.0 protocol. When composing a request, the `Authorization: OAuth <YOUR-YANDEX-DISK-TOKEN>` header is used.
+
 To run the service, install the dependencies:
 
 ```bash
@@ -63,7 +65,7 @@ LOG_COMPRESSION="zip"
 |-- main.py             # Main synchronization script
 |-- .env                # Configuration file
 |-- requirements.txt    # Project dependencies
-|-- info.md             # Additional documentation
+|-- README.md           # Additional documentation
 ```
 
 ## Usage
