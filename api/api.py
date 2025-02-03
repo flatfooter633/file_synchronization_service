@@ -61,7 +61,7 @@ class YandexDiskAPI:
         }
         async with session.put(self.BASE_URL, headers=self.headers, params=params) as response:
             if response.status in (201, 409):
-                logger.debug(f"Каталог {full_path} {'создан' if response.status == 201 else 'уже существует'}")
+                logger.debug(f"Каталог [{full_path}] {'создан' if response.status == 201 else 'уже существует'}")
                 return True
             logger.error(f"Ошибка [{response.status}] при создании каталога {full_path}: {await response.text()}")
         return False
@@ -73,8 +73,8 @@ class YandexDiskAPI:
             full_path = self.get_full_path(remote_path=remote_path)
             if validate_path(remote_path):
                 created = await self.create_folder(session, remote_path)
-                logger.info(f"Синхронизация каталога {full_path} успешно завершена") if created \
-                    else logger.error(f"Не удалось создать каталог {full_path}")
+                logger.info(f"Синхронизация каталога [{full_path}] успешно завершена") if created \
+                    else logger.error(f"Не удалось создать каталог [{full_path}]")
 
 
     async def sync_folder(self, local_folder: str):
@@ -115,7 +115,7 @@ class YandexDiskAPI:
         # Получаем информацию о файлах в текущей облачной директории
         cur_path = self.get_full_path(remote_path=remote_path)
         try:
-            logger.debug(f"Проверяем локальный каталог: {cur_path}")
+            logger.debug(f"Проверяем локальный каталог: [{cur_path}]")
             cloud_files = await self.get_info(session, cur_path)
             logger.debug(f"- облачные файлы: {cloud_files.keys()}")
             local_files = [f for f in os.listdir(local_dir)
@@ -134,17 +134,17 @@ class YandexDiskAPI:
                 cloud_hash = cloud_files.get(file)
 
                 if local_hash != cloud_hash:
-                    logger.info(f"Файл {file} поставлен в очередь на загрузку. ")
-                    logger.info(f"  Локальный хеш: {local_hash}")
-                    logger.info(f"   Облачный хеш: {cloud_hash}")
+                    logger.info(f"Файл [{file}] поставлен в очередь на загрузку. ")
+                    logger.info(f"  Локальный хеш: [{local_hash}]")
+                    logger.info(f"   Облачный хеш: [{cloud_hash}]")
                     upload_tasks.append(asyncio.create_task(self.upload(session, local_file_path, remote_file_path)))
                 else:
-                    logger.debug(f"Файл {file} уже синхронизирован")
+                    logger.debug(f"Файл [{file}] уже синхронизирован")
 
             # Удаляем лишние файлы из облака
             await self.cleanup(session, remote_path, cloud_files, os.listdir(local_dir))
         except FileNotFoundError as e:
-            logger.error(f"Ошибка при обработке каталога {local_dir}: {e}")
+            logger.error(f"Ошибка при обработке каталога [{local_dir}]: {e}")
 
     async def get_info(self, session, remote_dir_path: str):
         """Получает список файлов и их хеши в облаке"""
@@ -160,7 +160,7 @@ class YandexDiskAPI:
                 return {str(item["name"]): item.get("md5") for item in data.get("_embedded", {}).get("items", [])
                         if item.get("type") == "file"}
             logger.warning(f"HTTP ответ [{remote_dir_path}]: {await response.text()}")
-            raise FileNotFoundError(f"Ресурс не найден: {remote_dir_path}")
+            raise FileNotFoundError(f"Ресурс не найден: [{remote_dir_path}]")
 
     async def get_upload_url(self, session, remote_path):
         """Получает URL для загрузки"""
@@ -181,13 +181,13 @@ class YandexDiskAPI:
                 with open(file_path, "rb") as f:
                     async with session.put(upload_url, data=f) as response:
                         if response.status in [200, 201, 202]:
-                            logger.warning(f"Файл {remote_path} загружен")
+                            logger.warning(f"Файл [{remote_path}] загружен")
                             return True
                         else:
                             logger.error(
-                                f"Ошибка загрузки {file_path}: статус {response.status}, {await response.text()}")
+                                f"Ошибка загрузки [{file_path}]: статус [{response.status}], {await response.text()}")
             else:
-                logger.error(f"Не удалось получить URL для загрузки файла {file_path}")
+                logger.error(f"Не удалось получить URL для загрузки файла [{file_path}]")
         return False
 
     async def delete(self, session, remote_path_to_file):
@@ -198,7 +198,7 @@ class YandexDiskAPI:
                 if response.status in [200, 202, 204]:
                     logger.debug(f"Файл {remote_path_to_file} удалён")
                     return True
-                logger.error(f"Ошибка удаления {remote_path_to_file}: {await response.text()}")
+                logger.error(f"Ошибка удаления [{remote_path_to_file}]: {await response.text()}")
         return False
 
     async def cleanup(self, session, remote_path, cloud_files, local_files):
@@ -208,6 +208,6 @@ class YandexDiskAPI:
         files_to_delete = remote_set - local_set
 
         for remote_file in files_to_delete:
-            logger.debug(f"Файл {remote_file} отсутствует локально")
+            logger.debug(f"Файл [{remote_file}] отсутствует локально")
             if await self.delete(session, self.get_full_path(remote_path=remote_path, filename=remote_file)):
-                logger.warning(f"Файл {remote_file} удалён из облака, так как отсутствует локально")
+                logger.warning(f"Файл [{remote_file}] удалён из облака, так как отсутствует локально")
