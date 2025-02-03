@@ -1,16 +1,19 @@
+import asyncio
 import os
 from sys import stdout
-import asyncio
+
 from dotenv import load_dotenv, find_dotenv
 from loguru import logger
+
 from api.api import YandexDiskAPI
 
 # Загрузка переменных окружения из файла .env
 # Если файла .env нет, окружение не загружается и приложение завершается с сообщением об ошибке.
-if not find_dotenv():
+(
     exit("Переменные окружения не загружены, потому что файл .env отсутствует")
-else:
-    load_dotenv()
+    if not find_dotenv()
+    else load_dotenv()
+)
 
 LOCAL_FOLDER = os.getenv("SYNC_FOLDER")
 YANDEX_FOLDER = os.getenv("YANDEX_FOLDER")
