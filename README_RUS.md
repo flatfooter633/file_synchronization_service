@@ -34,7 +34,7 @@ YANDEX_TOKEN=<YOUR-YANDEX-DISK-TOKEN>
 SYNC_INTERVAL=10
 
 # Путь к файлу журнала
-LOG_FILE=log\sync.log
+LOG_FILE=sync.log
 
 # Уровень логирования для вывода в консоль
 LOG_LEVEL="INFO"

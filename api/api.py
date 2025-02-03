@@ -22,6 +22,14 @@ def sanitize_path(path) -> str:
     """Удаляет точки и нормализует путь."""
     return str(os.path.normpath(path).replace("\\", "/"))
 
+def validate_path(path) -> bool:
+    """Возвращает True, если папка удовлетворяет критериям синхронизации."""
+    return True \
+        if (
+            not any(part.startswith(('.', '_', 'venv')) for part in path.split('/'))
+            and "&" not in path) \
+        else False
+
 
 class YandexDiskAPI:
     first_run = True
@@ -52,15 +60,10 @@ class YandexDiskAPI:
             "fields": "name,_embedded.items.path",
         }
         async with session.put(self.BASE_URL, headers=self.headers, params=params) as response:
-            if response.status == 201:
-                logger.debug(f"ответ {await response.json()}")
-                logger.debug(f"Папка {full_path} создана")
+            if response.status in (201, 409):
+                logger.debug(f"Каталог {full_path} {'создан' if response.status == 201 else 'уже существует'}")
                 return True
-            elif response.status == 409:
-                logger.debug(f"ответ {await response.json()}")
-                logger.debug(f"Папка {full_path} уже существует")
-                return True
-            logger.error(f"Ошибка [{response.status}] при создании папки {full_path}: {await response.text()}")
+            logger.error(f"Ошибка [{response.status}] при создании каталога {full_path}: {await response.text()}")
         return False
 
     async def create_folders_first(self, session, local_folder):
@@ -68,10 +71,10 @@ class YandexDiskAPI:
         for root, dirs, _ in os.walk(local_folder):
             remote_path = sanitize_path(os.path.relpath(root, local_folder))
             full_path = self.get_full_path(remote_path=remote_path)
-            if not remote_path.startswith(('.', '_', 'venv')) and "&" not in remote_path:
+            if validate_path(remote_path):
                 created = await self.create_folder(session, remote_path)
-                logger.info(f"Папка {full_path} успешно создана и проверена") if created \
-                    else logger.error(f"Не удалось создать папку {full_path}")
+                logger.info(f"Синхронизация каталога {full_path} успешно завершена") if created \
+                    else logger.error(f"Не удалось создать каталог {full_path}")
 
 
     async def sync_folder(self, local_folder: str):
@@ -92,7 +95,7 @@ class YandexDiskAPI:
                 for root, dirs, files in os.walk(local_folder):
                     if root != local_folder:  # Пропускаем корневой каталог, так как он уже обработан
                         remote_path = sanitize_path(os.path.relpath(root, local_folder))
-                        if not remote_path.startswith(('.', '_', 'venv')) and "&" not in remote_path:
+                        if validate_path(remote_path):
                             sync_tasks.append(self.sync_directory(session, root, remote_path, upload_tasks))
 
                 # Выполняем все задачи синхронизации одновременно
@@ -114,10 +117,14 @@ class YandexDiskAPI:
         try:
             logger.debug(f"Проверяем локальный каталог: {cur_path}")
             cloud_files = await self.get_info(session, cur_path)
-            logger.debug(f"облачные файлы: {cloud_files.keys()}")
-            local_files = [f for f in os.listdir(local_dir) if
-                           not f.startswith(('.', '_')) and os.path.isfile(os.path.join(local_dir, f))]
-            logger.debug(f"локальные файлы: {local_files}")
+            logger.debug(f"- облачные файлы: {cloud_files.keys()}")
+            local_files = [f for f in os.listdir(local_dir)
+                           if
+                           validate_path(f)
+                           and
+                           os.path.isfile(os.path.join(local_dir, f))
+                           ]
+            logger.debug(f"- локальные файлы: {local_files}")
 
             # Сравниваем локальные и облачные файлы и выставляем их в очередь на загрузку или удаление
             for file in local_files:
@@ -138,6 +145,7 @@ class YandexDiskAPI:
             await self.cleanup(session, remote_path, cloud_files, os.listdir(local_dir))
         except FileNotFoundError as e:
             logger.error(f"Ошибка при обработке каталога {local_dir}: {e}")
+
     async def get_info(self, session, remote_dir_path: str):
         """Получает список файлов и их хеши в облаке"""
         params = {
@@ -186,7 +194,6 @@ class YandexDiskAPI:
         """Удаляет файл в облаке"""
         async with self.semaphore:
             url = f"{self.BASE_URL}?path={remote_path_to_file}"
-            logger.debug(f"URL удаления файла: {url}")
             async with session.delete(url, headers=self.headers) as response:
                 if response.status in [200, 202, 204]:
                     logger.debug(f"Файл {remote_path_to_file} удалён")
