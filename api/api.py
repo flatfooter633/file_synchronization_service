@@ -9,7 +9,7 @@ def get_file_hash(filepath: str) -> hash:
     """Возвращает хеш файла для отслеживания изменений."""
     hasher = hashlib.md5()
     try:
-        with open(filepath, 'rb') as f:
+        with open(filepath, "rb") as f:
             while chunk := f.read(8192):
                 hasher.update(chunk)
         return hasher.hexdigest()
@@ -22,23 +22,31 @@ def sanitize_path(path) -> str:
     """Удаляет точки и нормализует путь."""
     return str(os.path.normpath(path).replace("\\", "/"))
 
+
 def validate_path(path) -> bool:
     """Возвращает True, если папка удовлетворяет критериям синхронизации."""
-    return True \
+    return (
+        True
         if (
-            not any(part.startswith(('.', '_', 'venv')) for part in path.split('/'))
-            and "&" not in path) \
+            not any(part.startswith((".", "_", "venv")) for part in path.split("/"))
+            and "&" not in path
+        )
         else False
+    )
 
 
 class YandexDiskAPI:
     first_run = True
+
     def __init__(self, token, folder, max_concurrent_requests=55):
         """Инициализация API, получение токена и папки"""
         self.BASE_URL = "https://cloud-api.yandex.net/v1/disk/resources"
         self.token = token
         self.folder = sanitize_path(folder.rstrip("/"))
-        self.headers = {"Authorization": f"OAuth {self.token}", "Accept": "application/json"}
+        self.headers = {
+            "Authorization": f"OAuth {self.token}",
+            "Accept": "application/json",
+        }
         self.semaphore = asyncio.Semaphore(max_concurrent_requests)
 
     def get_full_path(self, remote_path: str = None, filename: str = None) -> str:
@@ -59,11 +67,17 @@ class YandexDiskAPI:
             "path": f"{full_path}",
             "fields": "name,_embedded.items.path",
         }
-        async with session.put(self.BASE_URL, headers=self.headers, params=params) as response:
+        async with session.put(
+            self.BASE_URL, headers=self.headers, params=params
+        ) as response:
             if response.status in (201, 409):
-                logger.debug(f"Каталог [{full_path}] {'создан' if response.status == 201 else 'уже существует'}")
+                logger.debug(
+                    f"Каталог [{full_path}] {'создан' if response.status == 201 else 'уже существует'}"
+                )
                 return True
-            logger.error(f"Ошибка [{response.status}] при создании каталога {full_path}: {await response.text()}")
+            logger.error(
+                f"Ошибка [{response.status}] при создании каталога {full_path}: {await response.text()}"
+            )
         return False
 
     async def create_folders_first(self, session, local_folder):
@@ -73,9 +87,13 @@ class YandexDiskAPI:
             full_path = self.get_full_path(remote_path=remote_path)
             if validate_path(remote_path):
                 created = await self.create_folder(session, remote_path)
-                logger.info(f"Синхронизация каталога [{full_path}] успешно завершена") if created \
+                (
+                    logger.info(
+                        f"Синхронизация каталога [{full_path}] успешно завершена"
+                    )
+                    if created
                     else logger.error(f"Не удалось создать каталог [{full_path}]")
-
+                )
 
     async def sync_folder(self, local_folder: str):
         """Синхронизирует файлы и удаляет отсутствующие"""
@@ -83,7 +101,9 @@ class YandexDiskAPI:
             # Создание очередей и синхронизация корневого каталога
             upload_tasks = []
             sync_tasks = []
-            await self.sync_directory(session, local_folder, remote_path=None, upload_tasks=upload_tasks)
+            await self.sync_directory(
+                session, local_folder, remote_path=None, upload_tasks=upload_tasks
+            )
 
             # Проверка первого запуска, если первый запуск, то создаём каталоги
             if YandexDiskAPI.first_run:
@@ -93,10 +113,16 @@ class YandexDiskAPI:
                 # Если это не первый запуск, то синхронизируем файлы
                 # Рекурсивный обход подкаталогов
                 for root, dirs, files in os.walk(local_folder):
-                    if root != local_folder:  # Пропускаем корневой каталог, так как он уже обработан
+                    if (
+                        root != local_folder
+                    ):  # Пропускаем корневой каталог, так как он уже обработан
                         remote_path = sanitize_path(os.path.relpath(root, local_folder))
                         if validate_path(remote_path):
-                            sync_tasks.append(self.sync_directory(session, root, remote_path, upload_tasks))
+                            sync_tasks.append(
+                                self.sync_directory(
+                                    session, root, remote_path, upload_tasks
+                                )
+                            )
 
                 # Выполняем все задачи синхронизации одновременно
                 await asyncio.gather(*sync_tasks)
@@ -108,7 +134,6 @@ class YandexDiskAPI:
             # Отмечаем, что мы уже синхронизировали корневой каталог
             YandexDiskAPI.first_run = False
 
-
     async def sync_directory(self, session, local_dir, remote_path, upload_tasks):
         """Синхронизирует отдельный каталог"""
         await self.create_folder(session, remote_path)
@@ -118,18 +143,19 @@ class YandexDiskAPI:
             logger.debug(f"Проверяем локальный каталог: [{cur_path}]")
             cloud_files = await self.get_info(session, cur_path)
             logger.debug(f"- облачные файлы: {cloud_files.keys()}")
-            local_files = [f for f in os.listdir(local_dir)
-                           if
-                           validate_path(f)
-                           and
-                           os.path.isfile(os.path.join(local_dir, f))
-                           ]
+            local_files = [
+                f
+                for f in os.listdir(local_dir)
+                if validate_path(f) and os.path.isfile(os.path.join(local_dir, f))
+            ]
             logger.debug(f"- локальные файлы: {local_files}")
 
             # Сравниваем локальные и облачные файлы и выставляем их в очередь на загрузку или удаление
             for file in local_files:
                 local_file_path = os.path.join(local_dir, file)
-                remote_file_path = self.get_full_path(remote_path=remote_path, filename=file)
+                remote_file_path = self.get_full_path(
+                    remote_path=remote_path, filename=file
+                )
                 local_hash = get_file_hash(local_file_path)
                 cloud_hash = cloud_files.get(file)
 
@@ -137,7 +163,11 @@ class YandexDiskAPI:
                     logger.info(f"Файл [{file}] поставлен в очередь на загрузку. ")
                     logger.info(f"  Локальный хеш: [{local_hash}]")
                     logger.info(f"   Облачный хеш: [{cloud_hash}]")
-                    upload_tasks.append(asyncio.create_task(self.upload(session, local_file_path, remote_file_path)))
+                    upload_tasks.append(
+                        asyncio.create_task(
+                            self.upload(session, local_file_path, remote_file_path)
+                        )
+                    )
                 else:
                     logger.debug(f"Файл [{file}] уже синхронизирован")
 
@@ -151,14 +181,19 @@ class YandexDiskAPI:
         params = {
             "path": remote_dir_path,
             "fields": "_embedded.items.name,_embedded.items.md5,_embedded.items.type",
-            "limit": 1000
+            "limit": 1000,
         }
-        async with session.get(self.BASE_URL, headers=self.headers, params=params) as response:
+        async with session.get(
+            self.BASE_URL, headers=self.headers, params=params
+        ) as response:
             if response.status == 200:
                 data = await response.json()
                 logger.debug(f"HTTP ответ [{remote_dir_path}] -- {data}")
-                return {str(item["name"]): item.get("md5") for item in data.get("_embedded", {}).get("items", [])
-                        if item.get("type") == "file"}
+                return {
+                    str(item["name"]): item.get("md5")
+                    for item in data.get("_embedded", {}).get("items", [])
+                    if item.get("type") == "file"
+                }
             logger.warning(f"HTTP ответ [{remote_dir_path}]: {await response.text()}")
             raise FileNotFoundError(f"Ресурс не найден: [{remote_dir_path}]")
 
@@ -185,9 +220,12 @@ class YandexDiskAPI:
                             return True
                         else:
                             logger.error(
-                                f"Ошибка загрузки [{file_path}]: статус [{response.status}], {await response.text()}")
+                                f"Ошибка загрузки [{file_path}]: статус [{response.status}], {await response.text()}"
+                            )
             else:
-                logger.error(f"Не удалось получить URL для загрузки файла [{file_path}]")
+                logger.error(
+                    f"Не удалось получить URL для загрузки файла [{file_path}]"
+                )
         return False
 
     async def delete(self, session, remote_path_to_file):
@@ -198,7 +236,9 @@ class YandexDiskAPI:
                 if response.status in [200, 202, 204]:
                     logger.debug(f"Файл {remote_path_to_file} удалён")
                     return True
-                logger.error(f"Ошибка удаления [{remote_path_to_file}]: {await response.text()}")
+                logger.error(
+                    f"Ошибка удаления [{remote_path_to_file}]: {await response.text()}"
+                )
         return False
 
     async def cleanup(self, session, remote_path, cloud_files, local_files):
@@ -209,5 +249,10 @@ class YandexDiskAPI:
 
         for remote_file in files_to_delete:
             logger.debug(f"Файл [{remote_file}] отсутствует локально")
-            if await self.delete(session, self.get_full_path(remote_path=remote_path, filename=remote_file)):
-                logger.warning(f"Файл [{remote_file}] удалён из облака, так как отсутствует локально")
+            if await self.delete(
+                session,
+                self.get_full_path(remote_path=remote_path, filename=remote_file),
+            ):
+                logger.warning(
+                    f"Файл [{remote_file}] удалён из облака, так как отсутствует локально"
+                )

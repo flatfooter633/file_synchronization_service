@@ -25,7 +25,9 @@ LOG_COMPRESSION = os.getenv("LOG_COMPRESSION", "zip")
 # Настраиваем логирование
 logger.remove()
 logger.add(stdout, level=LOG_LEVEL, colorize=True)
-logger.add(LOG_FILE, level=LOG_FILE_LEVEL, rotation=LOG_ROTATION, compression=LOG_COMPRESSION)
+logger.add(
+    LOG_FILE, level=LOG_FILE_LEVEL, rotation=LOG_ROTATION, compression=LOG_COMPRESSION
+)
 
 
 async def sync_files():
@@ -45,6 +47,7 @@ async def main():
     while True:
         await sync_files()
         await asyncio.sleep(SYNC_INTERVAL)
+
 
 if __name__ == "__main__":
     try:
